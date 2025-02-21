@@ -6,6 +6,7 @@ import "./style.css";
 import getInitialData from "./get-initial-data";
 import { reorderList } from "./reorder";
 import { initialCanvas, initialSideCanvas } from "./initialData";
+import { getRandomId } from "./utils";
 
 function getStyle({ draggableStyle, virtualStyle, isDragging }) {
   // If you don't want any spacing between your items
@@ -70,6 +71,61 @@ const Row = React.memo(function Row(props) {
   );
 }, areEqual);
 
+const ItemListStatic = React.memo(function ItemList({ column, index }) {
+  // There is an issue I have noticed with react-window that when reordered
+  // react-window sets the scroll back to 0 but does not update the UI
+  // I should raise an issue for this.
+  // As a work around I am resetting the scroll to 0
+  // on any list that changes it's index
+  const listRef = useRef();
+  // useLayoutEffect(() => {
+  //   const list = listRef.current;
+  //   if (list) {
+  //     list.scrollTo(0);
+  //   }
+  // }, [index]);
+
+  return (
+    <Droppable
+      isDropDisabled={true}
+      isCombineEnabled={false}
+      ignoreContainerClipping={false}
+      droppableId={column.id}
+      mode="virtual"
+      renderClone={(provided, snapshot, rubric) => (
+        <Item
+          provided={provided}
+          isDragging={snapshot.isDragging}
+          item={column.items[rubric.source.index]}
+        />
+      )}
+    >
+      {(provided, snapshot) => {
+        // Add an extra item to our list to make space for a dragging item
+        // Usually the DroppableProvided.placeholder does this, but that won't
+        // work in a virtual list
+        const itemCount = snapshot.isUsingPlaceholder
+          ? column.items.length + 1
+          : column.items.length;
+
+        return (
+          <FixedSizeList
+            height={500}
+            itemCount={itemCount}
+            itemSize={80}
+            width={300}
+            outerRef={provided.innerRef}
+            itemData={column.items}
+            className="task-list"
+            ref={listRef}
+          >
+            {Row}
+          </FixedSizeList>
+        );
+      }}
+    </Droppable>
+  );
+});
 const ItemList = React.memo(function ItemList({ column, index }) {
   // There is an issue I have noticed with react-window that when reordered
   // react-window sets the scroll back to 0 but does not update the UI
@@ -88,7 +144,7 @@ const ItemList = React.memo(function ItemList({ column, index }) {
     <Droppable
       isDropDisabled={false}
       isCombineEnabled={true}
-      ignoreContainerClipping={true}
+      ignoreContainerClipping={false}
       droppableId={column.id}
       mode="virtual"
       renderClone={(provided, snapshot, rubric) => (
@@ -126,27 +182,9 @@ const ItemList = React.memo(function ItemList({ column, index }) {
   );
 });
 
-const Column = React.memo(function Column({ column, index }) {
-  return (
-    <Draggable draggableId={column.id} index={index}>
-      {(provided) => (
-        <div
-          className="column"
-          {...provided.draggableProps}
-          ref={provided.innerRef}
-        >
-          <h3 className="column-title" {...provided.dragHandleProps}>
-            {column.title}
-          </h3>
-          <ItemList column={column} index={index} />
-        </div>
-      )}
-    </Draggable>
-  );
-});
-
 export default function App() {
   const [state, setState] = useState(initialCanvas);
+  console.log("state", state);
 
   function onDragEnd(result) {
     console.log("result: ", result);
@@ -166,10 +204,52 @@ export default function App() {
         return;
       } else {
         console.log("nah handle ini pindahin kedalem canvas");
+        // moving between lists
+        const sourceIndex = result.source.index;
+        const destinationIdx = result.destination.index;
+
+        const newStateItems = [...state.items];
+
+        newStateItems.splice(destinationIdx, 0, {
+          id: getRandomId(),
+          text: initialSideCanvas.items[sourceIndex].text,
+        });
+
+        const newState = {
+          id: "canvas",
+          items: newStateItems,
+          title: "Canvas",
+        };
+
+        console.log("newState", newState);
+
+        setState(newState);
         return;
       }
     } else {
-      console.log("ini logic untuk didalam canvas");
+      console.log("ini logic atur urutan droppable dalem canvas");
+      const sourceIndex = result.source.index;
+      const destinationIdx = result.destination.index;
+      if (sourceIndex === destinationIdx) {
+        console.log("gausah ngapa ngapain ini sama aja");
+        return;
+      }
+
+      const newStateItems = [...state.items];
+      const [removed] = newStateItems.splice(sourceIndex, 1);
+      newStateItems.splice(destinationIdx, 0, removed);
+
+      //swap TODO: ini salah ya jangan di swap tapi harus diurut ulang arraynya
+
+      const newState = {
+        id: "canvas",
+        items: newStateItems,
+        title: "Canvas",
+      };
+
+      console.log("newState", newState);
+
+      setState(newState);
       return;
     }
   }
@@ -181,30 +261,28 @@ export default function App() {
           droppableId="side"
           direction="horizontal"
           type="side"
-          isDropDisabled={false}
+          isDropDisabled={true}
           isCombineEnabled={false}
           ignoreContainerClipping={false}
         >
           {(provided) => (
             <div
-              className="columns2"
+              style={{ border: "5px solid pink" }}
               {...provided.droppableProps}
               ref={provided.innerRef}
             >
-              <Draggable draggableId={initialSideCanvas.id} index={99}>
+              <Draggable draggableId={initialSideCanvas.id} index={0}>
                 {(provided) => (
-                  <div
-                    className="column2"
-                    {...provided.dragHandleProps}
-                    ref={provided.innerRef}
-                  >
+                  <div {...provided.dragHandleProps} ref={provided.innerRef}>
                     <h1 className="column-title" {...provided.dragHandleProps}>
                       {initialSideCanvas.title}
                     </h1>
-                    <ItemList column={initialSideCanvas} index={99} />
+                    <ItemListStatic column={initialSideCanvas} index={0} />
+                    {provided.placeholder}
                   </div>
                 )}
               </Draggable>
+              {provided.placeholder}
             </div>
           )}
         </Droppable>
@@ -218,11 +296,12 @@ export default function App() {
         >
           {(provided) => (
             <div
+              style={{ border: "5px solid white" }}
               className="columns2"
               {...provided.droppableProps}
               ref={provided.innerRef}
             >
-              <Draggable draggableId={initialCanvas.id} index={99}>
+              <Draggable draggableId={state.id} index={1}>
                 {(provided) => (
                   <div
                     className="column2"
@@ -230,12 +309,13 @@ export default function App() {
                     ref={provided.innerRef}
                   >
                     <h1 className="column-title" {...provided.dragHandleProps}>
-                      {initialCanvas.title}
+                      {state.title}
                     </h1>
-                    <ItemList column={initialCanvas} index={99} />
+                    <ItemList column={state} index={1} />
                   </div>
                 )}
               </Draggable>
+              {provided.placeholder}
             </div>
           )}
         </Droppable>
