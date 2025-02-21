@@ -5,7 +5,6 @@ import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import "./style.css";
 import getInitialData from "./get-initial-data";
 import { reorderList } from "./reorder";
-import { initialCanvas, initialSideCanvas } from "./initialData";
 
 function getStyle({ draggableStyle, virtualStyle, isDragging }) {
   // If you don't want any spacing between your items
@@ -146,96 +145,110 @@ const Column = React.memo(function Column({ column, index }) {
 });
 
 export default function App() {
-  const [state, setState] = useState(initialCanvas);
+  const [state, setState] = useState(() => getInitialData());
 
   function onDragEnd(result) {
-    console.log("result: ", result);
     if (!result.destination) {
-      console.log("outside droppable, do nothing");
       return;
     }
 
-    if (result.destination.droppableId === "web-component") {
-      console.log("segala yg di drop ke web-component, do nothing");
+    if (result.type === "column") {
+      // if the list is scrolled it looks like there is some strangeness going on
+      // with react-window. It looks to be scrolling back to scroll: 0
+      // I should log an issue with the project
+      const columnOrder = reorderList(
+        state.columnOrder,
+        result.source.index,
+        result.destination.index
+      );
+      setState({
+        ...state,
+        columnOrder,
+      });
       return;
     }
 
-    if (result.source.droppableId === "web-component") {
-      if (result.source.droppableId === result.destination.droppableId) {
-        console.log("do nothing");
-        return;
-      } else {
-        console.log("nah handle ini pindahin kedalem canvas");
-        return;
-      }
-    } else {
-      console.log("ini logic untuk didalam canvas");
+    // reordering in same list
+    if (result.source.droppableId === result.destination.droppableId) {
+      const column = state.columns[result.source.droppableId];
+      const items = reorderList(
+        column.items,
+        result.source.index,
+        result.destination.index
+      );
+
+      // updating column entry
+      const newState = {
+        ...state,
+        columns: {
+          ...state.columns,
+          [column.id]: {
+            ...column,
+            items,
+          },
+        },
+      };
+      setState(newState);
       return;
     }
+
+    // moving between lists
+    const sourceColumn = state.columns[result.source.droppableId];
+    const destinationColumn = state.columns[result.destination.droppableId];
+    const item = sourceColumn.items[result.source.index];
+
+    // 1. remove item from source column
+    const newSourceColumn = {
+      ...sourceColumn,
+      items: [...sourceColumn.items],
+    };
+    newSourceColumn.items.splice(result.source.index, 1);
+
+    // 2. insert into destination column
+    const newDestinationColumn = {
+      ...destinationColumn,
+      items: [...destinationColumn.items],
+    };
+    // in line modification of items
+    newDestinationColumn.items.splice(result.destination.index, 0, item);
+
+    const newState = {
+      ...state,
+      columns: {
+        ...state.columns,
+        [newSourceColumn.id]: newSourceColumn,
+        [newDestinationColumn.id]: newDestinationColumn,
+      },
+    };
+
+    setState(newState);
   }
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <div style={{ display: "flex", width: "100%", gap: "25px" }}>
+      <div className="app">
         <Droppable
-          droppableId="side"
+          droppableId="all-droppables"
           direction="horizontal"
-          type="side"
+          type="column"
           isDropDisabled={false}
-          isCombineEnabled={false}
-          ignoreContainerClipping={false}
+          isCombineEnabled={true}
+          ignoreContainerClipping={true}
         >
           {(provided) => (
             <div
-              className="columns2"
+              className="columns"
               {...provided.droppableProps}
               ref={provided.innerRef}
             >
-              <Draggable draggableId={initialSideCanvas.id} index={99}>
-                {(provided) => (
-                  <div
-                    className="column2"
-                    {...provided.dragHandleProps}
-                    ref={provided.innerRef}
-                  >
-                    <h1 className="column-title" {...provided.dragHandleProps}>
-                      {initialSideCanvas.title}
-                    </h1>
-                    <ItemList column={initialSideCanvas} index={99} />
-                  </div>
-                )}
-              </Draggable>
-            </div>
-          )}
-        </Droppable>
-        <Droppable
-          droppableId="side2"
-          direction="horizontal"
-          type="side2"
-          isDropDisabled={false}
-          isCombineEnabled={false}
-          ignoreContainerClipping={false}
-        >
-          {(provided) => (
-            <div
-              className="columns2"
-              {...provided.droppableProps}
-              ref={provided.innerRef}
-            >
-              <Draggable draggableId={initialCanvas.id} index={99}>
-                {(provided) => (
-                  <div
-                    className="column2"
-                    {...provided.dragHandleProps}
-                    ref={provided.innerRef}
-                  >
-                    <h1 className="column-title" {...provided.dragHandleProps}>
-                      {initialCanvas.title}
-                    </h1>
-                    <ItemList column={initialCanvas} index={99} />
-                  </div>
-                )}
-              </Draggable>
+              {state.columnOrder.map((columnId, index) => (
+                <Column
+                  key={columnId}
+                  column={state.columns[columnId]}
+                  index={index}
+                />
+              ))}
+              {provided.placeholder}
             </div>
           )}
         </Droppable>
